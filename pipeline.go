@@ -5,9 +5,66 @@ package librealsense2
 #cgo CPPFLAGS: -I/usr/local/include
 #include <librealsense2/rs.h>
 #include <librealsense2/h/rs_pipeline.h>
+#include <librealsense2/h/rs_frame.h>
 #include <librealsense2/h/rs_processing.h>
-*/
+#include <librealsense2/h/rs_option.h>
+#include <librealsense2/h/rs_sensor.h>
+#include <librealsense2/h/rs_context.h>
 
+// 定义RealSense常量
+#define RS2_API_VERSION RS2_API_MAJOR_VERSION * 10000 + RS2_API_MINOR_VERSION * 100 + RS2_API_PATCH_VERSION
+
+// 定义枚举类型
+typedef enum rs2_stream          rs2_stream;
+typedef enum rs2_format          rs2_format;
+typedef enum rs2_extension       rs2_extension;
+typedef enum rs2_camera_info     rs2_camera_info;
+
+// 定义结构体类型
+typedef struct rs2_context           rs2_context;
+typedef struct rs2_device            rs2_device;
+typedef struct rs2_device_list        rs2_device_list;
+typedef struct rs2_pipeline          rs2_pipeline;
+typedef struct rs2_config            rs2_config;
+typedef struct rs2_pipeline_profile  rs2_pipeline_profile;
+typedef struct rs2_frame             rs2_frame;
+typedef struct rs2_processing_block  rs2_processing_block;
+typedef struct rs2_error             rs2_error;
+
+// 定义函数原型
+rs2_context* rs2_create_context(int api_version, rs2_error** error);
+void rs2_delete_context(rs2_context* context);
+rs2_device_list* rs2_query_devices(rs2_context* context, rs2_error** error);
+int rs2_get_device_count(const rs2_device_list* info_list, rs2_error** error);
+rs2_device* rs2_create_device(const rs2_device_list* info_list, int index, rs2_error** error);
+void rs2_delete_device(rs2_device* device);
+const char* rs2_get_device_info(const rs2_device* device, rs2_camera_info info, rs2_error** error);
+void rs2_delete_device_list(rs2_device_list* info_list);
+rs2_pipeline* rs2_create_pipeline(rs2_context* ctx, rs2_error** error);
+void rs2_delete_pipeline(rs2_pipeline* pipeline);
+rs2_config* rs2_create_config(rs2_error** error);
+void rs2_delete_config(rs2_config* config);
+void rs2_config_enable_device(rs2_config* config, const char* serial, rs2_error** error);
+void rs2_config_enable_stream(rs2_config* config, rs2_stream stream, int index, int width, int height, rs2_format format, int framerate, rs2_error** error);
+rs2_pipeline_profile* rs2_pipeline_start_with_config(rs2_pipeline* pipeline, rs2_config* config, rs2_error** error);
+void rs2_pipeline_stop(rs2_pipeline* pipeline, rs2_error** error);
+void rs2_delete_pipeline_profile(rs2_pipeline_profile* profile);
+rs2_frame* rs2_pipeline_wait_for_frames(rs2_pipeline* pipeline, unsigned int timeout_ms, rs2_error** error);
+int rs2_embedded_frames_count(const rs2_frame* composite, rs2_error** error);
+rs2_frame* rs2_extract_frame(const rs2_frame* composite, int index, rs2_error** error);
+void rs2_release_frame(rs2_frame* frame);
+int rs2_get_frame_width(const rs2_frame* frame, rs2_error** error);
+int rs2_get_frame_height(const rs2_frame* frame, rs2_error** error);
+const void* rs2_get_frame_data(const rs2_frame* frame, rs2_error** error);
+int rs2_is_frame_extendable_to(const rs2_frame* frame, rs2_extension extension, rs2_error** error);
+int rs2_get_frame_bytes_per_pixel(const rs2_frame* frame, rs2_error** error);
+rs2_processing_block* rs2_create_align(rs2_stream align_to, rs2_error** error);
+void rs2_delete_processing_block(rs2_processing_block* block);
+rs2_frame* rs2_process_frame(rs2_processing_block* block, rs2_frame* frame, rs2_error** error);
+rs2_frame* rs2_import_frame_from_raw_data(const void* data, int width, int height, int stride, rs2_format format, int stride_in_pixels, int bpp, rs2_error** error);
+const char* rs2_get_error_message(const rs2_error* error);
+void rs2_free_error(rs2_error* error);
+*/
 import "C"
 import (
 	"errors"
@@ -44,6 +101,26 @@ type Pipeline struct {
 }
 
 // 在librealsense2包中添加以下代码
+const (
+	// Stream types
+	StreamDepth Stream = C.RS2_STREAM_DEPTH
+	StreamColor Stream = C.RS2_STREAM_COLOR
+
+	// Format types
+	FormatZ16  Format = C.RS2_FORMAT_Z16
+	FormatBGR8 Format = C.RS2_FORMAT_BGR8
+
+	// Camera info types
+	CameraInfoSerialNumber CameraInfo = C.RS2_CAMERA_INFO_SERIAL_NUMBER
+
+	// Extension types
+	ExtensionDepthFrame Extension = C.RS2_EXTENSION_DEPTH_FRAME
+)
+
+type Stream C.rs2_stream
+type Format C.rs2_format
+type CameraInfo C.rs2_camera_info
+type Extension C.rs2_extension
 
 // Align represents a frame alignment processor
 type Align struct {
