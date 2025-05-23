@@ -5,7 +5,9 @@ package librealsense2
 #cgo CPPFLAGS: -I/usr/local/include
 #include <librealsense2/rs.h>
 #include <librealsense2/h/rs_pipeline.h>
+#include <librealsense2/h/rs_processing.h>
 */
+
 import "C"
 import (
 	"errors"
@@ -39,6 +41,123 @@ type Pipeline struct {
 	profile *C.rs2_pipeline_profile
 
 	filters []*Filter
+}
+
+// 在librealsense2包中添加以下代码
+
+// Align represents a frame alignment processor
+type Align struct {
+	align *C.rs2_processing_block
+}
+
+// NewAlign creates a new frame aligner that aligns frames to the specified target stream
+func NewAlign(stream Stream) (*Align, error) {
+	var err *C.rs2_error
+	align := C.rs2_create_align(C.rs2_stream(stream), &err)
+	if err != nil {
+		return nil, errorFrom(err)
+	}
+	return &Align{align: align}, nil
+}
+
+// Process aligns the input frame to the target stream
+func (a *Align) Process(frame *gocv.Mat) (*gocv.Mat, error) {
+	if frame == nil || frame.Empty() {
+		return nil, fmt.Errorf("input frame is nil or empty")
+	}
+
+	var err *C.rs2_error
+	
+	// 将gocv.Mat转换为rs2_frame
+	var frameType C.rs2_format
+	switch frame.Type() {
+	case gocv.MatTypeCV8UC3:
+		frameType = C.RS2_FORMAT_BGR8
+	case gocv.MatTypeCV16UC1:
+		frameType = C.RS2_FORMAT_Z16
+	default:
+		return nil, fmt.Errorf("unsupported frame format")
+	}
+	
+	w := frame.Cols()
+	h := frame.Rows()
+	
+	// 创建rs2_frame
+	frameData := frame.ToBytes()
+	rs2Frame := C.rs2_import_frame_from_raw_data(
+		unsafe.Pointer(&frameData[0]),
+		C.int(w),
+		C.int(h),
+		C.int(frame.Step()),
+		frameType,
+		C.int(0), // stride
+		C.int(0), // bits per pixel
+		&err)
+	if err != nil {
+		return nil, errorFrom(err)
+	}
+	defer C.rs2_release_frame(rs2Frame)
+	
+	// 处理对齐
+	processedFrames := C.rs2_process_frame(a.align, rs2Frame, &err)
+	if err != nil {
+		return nil, errorFrom(err)
+	}
+	defer C.rs2_release_frame(processedFrames)
+	
+	// 提取对齐后的帧
+	count := C.rs2_embedded_frames_count(processedFrames, &err)
+	if err != nil {
+		return nil, errorFrom(err)
+	}
+	
+	if count == 0 {
+		return nil, fmt.Errorf("no frames after processing")
+	}
+	
+	alignedFrame := C.rs2_extract_frame(processedFrames, 0, &err)
+	if err != nil {
+		return nil, errorFrom(err)
+	}
+	defer C.rs2_release_frame(alignedFrame)
+	
+	// 将rs2_frame转换回gocv.Mat
+	w = int(C.rs2_get_frame_width(alignedFrame, &err))
+	h = int(C.rs2_get_frame_height(alignedFrame, &err))
+	
+	var matType gocv.MatType
+	if C.rs2_is_frame_extendable_to(alignedFrame, C.RS2_EXTENSION_DEPTH_FRAME, &err) != 0 {
+		matType = gocv.MatTypeCV16UC1
+	} else {
+		matType = gocv.MatTypeCV8UC3
+	}
+	
+	frameDataPtr := C.rs2_get_frame_data(alignedFrame, &err)
+	if err != nil {
+		return nil, errorFrom(err)
+	}
+	
+	dataSize := w * h * int(C.rs2_get_frame_bytes_per_pixel(alignedFrame, &err))
+	if err != nil {
+		return nil, errorFrom(err)
+	}
+	
+	data := C.GoBytes(unsafe.Pointer(frameDataPtr), C.int(dataSize))
+	result, err := gocv.NewMatFromBytes(h, w, matType, data)
+	if err != nil {
+		return nil, err
+	}
+	
+	return &result, nil
+}
+
+// Close releases the align resources
+func (a *Align) Close() error {
+	if a.align != nil {
+		C.rs2_delete_processing_block(a.align)
+		a.align = nil
+	}
+	return nil
 }
 
 // NewPipeline creates a new pipeline with the given serial number. If serial is
